@@ -3,9 +3,14 @@
  * Plugin Name: Google Sheets Integration for WooCommerce by WP Methods
  * Plugin URI: https://wpmethods.com/plugins/google-sheets-integration-for-woocommerce/
  * Description: Send order data to Google Sheets when order status changes to selected statuses
- * Version: 2.0.3
+ * Version: 2.0.5
  * Author: WP Methods
  * Author URI: https://wpmethods.com
+ * License: GPL2
+ * Text Domain: wpmethods-wc-to-gs
+ * Domain Path: /languages
+ * Requires at least: 5.9
+ * Requires PHP: 7.4
  */
 
 // Prevent direct access
@@ -16,7 +21,6 @@ if (!defined('ABSPATH')) {
 class WPMethods_WC_To_Google_Sheets {
     
     private $available_fields = array();
-    private $default_fields = array();
     
     public function __construct() {
         // Define available fields
@@ -46,8 +50,8 @@ class WPMethods_WC_To_Google_Sheets {
      * Define available fields
      */
     private function define_available_fields() {
-        // Default fields that are always available
-        $this->default_fields = array(
+        // Simplified fields - only include working ones
+        $this->available_fields = array(
             'order_id' => array(
                 'label' => 'Order ID',
                 'required' => true,
@@ -58,8 +62,13 @@ class WPMethods_WC_To_Google_Sheets {
                 'required' => true,
                 'always_include' => true
             ),
+            'billing_email' => array(
+                'label' => 'Email Address',
+                'required' => false,
+                'always_include' => false
+            ),
             'billing_phone' => array(
-                'label' => 'Billing Phone',
+                'label' => 'Phone',
                 'required' => false,
                 'always_include' => false
             ),
@@ -73,10 +82,15 @@ class WPMethods_WC_To_Google_Sheets {
                 'required' => true,
                 'always_include' => true
             ),
-            'order_amount' => array(
+            'order_amount_with_currency' => array(
                 'label' => 'Order Amount',
                 'required' => true,
                 'always_include' => true
+            ),
+            'order_currency' => array(
+                'label' => 'Order Currency',
+                'required' => false,
+                'always_include' => false
             ),
             'order_status' => array(
                 'label' => 'Order Status',
@@ -92,139 +106,8 @@ class WPMethods_WC_To_Google_Sheets {
                 'label' => 'Product Categories',
                 'required' => false,
                 'always_include' => false
-            ),
-            'shipping_class' => array(
-                'label' => 'Shipping Class',
-                'required' => false,
-                'always_include' => false
             )
         );
-        
-        // Start with default fields
-        $this->available_fields = $this->default_fields;
-        
-        // Add checkout fields dynamically when needed
-        add_action('admin_init', array($this, 'wpmethods_add_checkout_fields'), 20);
-    }
-    
-    /**
-     * Add WooCommerce checkout fields (called later in admin_init)
-     */
-    public function wpmethods_add_checkout_fields() {
-        if (!class_exists('WooCommerce')) {
-            return;
-        }
-        
-        $checkout_fields = $this->get_wc_checkout_fields();
-        
-        // Add checkout fields to available fields
-        foreach ($checkout_fields as $key => $field) {
-            $this->available_fields[$key] = $field;
-        }
-    }
-    
-    /**
-     * Get WooCommerce checkout fields
-     */
-    private function get_wc_checkout_fields() {
-        $checkout_fields = array();
-        
-        // Get billing fields from WooCommerce countries class
-        if (class_exists('WC_Countries')) {
-            $countries = new WC_Countries();
-            
-            // Billing fields
-            $billing_fields = $countries->get_address_fields('', 'billing_');
-            foreach ($billing_fields as $key => $field) {
-                $clean_key = str_replace('billing_', '', $key);
-                $checkout_fields['billing_' . $clean_key] = array(
-                    'label' => isset($field['label']) ? $field['label'] : ucfirst(str_replace('_', ' ', $clean_key)),
-                    'required' => isset($field['required']) ? $field['required'] : false,
-                    'always_include' => false,
-                    'type' => 'billing',
-                    'original_key' => $key
-                );
-            }
-            
-            // Shipping fields
-            $shipping_fields = $countries->get_address_fields('', 'shipping_');
-            foreach ($shipping_fields as $key => $field) {
-                $clean_key = str_replace('shipping_', '', $key);
-                $checkout_fields['shipping_' . $clean_key] = array(
-                    'label' => isset($field['label']) ? $field['label'] : ucfirst(str_replace('_', ' ', $clean_key)),
-                    'required' => isset($field['required']) ? $field['required'] : false,
-                    'always_include' => false,
-                    'type' => 'shipping',
-                    'original_key' => $key
-                );
-            }
-        }
-        
-        // Additional order fields
-        $additional_fields = array(
-            'customer_note' => array(
-                'label' => 'Customer Note',
-                'required' => false,
-                'always_include' => false,
-                'type' => 'order'
-            ),
-            'payment_method' => array(
-                'label' => 'Payment Method',
-                'required' => false,
-                'always_include' => false,
-                'type' => 'order'
-            ),
-            'payment_method_title' => array(
-                'label' => 'Payment Method Title',
-                'required' => false,
-                'always_include' => false,
-                'type' => 'order'
-            ),
-            'transaction_id' => array(
-                'label' => 'Transaction ID',
-                'required' => false,
-                'always_include' => false,
-                'type' => 'order'
-            ),
-            'customer_ip' => array(
-                'label' => 'Customer IP',
-                'required' => false,
-                'always_include' => false,
-                'type' => 'order'
-            ),
-            'customer_user_agent' => array(
-                'label' => 'User Agent',
-                'required' => false,
-                'always_include' => false,
-                'type' => 'order'
-            ),
-            'shipping_method' => array(
-                'label' => 'Shipping Method',
-                'required' => false,
-                'always_include' => false,
-                'type' => 'order'
-            ),
-            'shipping_cost' => array(
-                'label' => 'Shipping Cost',
-                'required' => false,
-                'always_include' => false,
-                'type' => 'order'
-            ),
-            'tax_amount' => array(
-                'label' => 'Tax Amount',
-                'required' => false,
-                'always_include' => false,
-                'type' => 'order'
-            ),
-            'discount_amount' => array(
-                'label' => 'Discount Amount',
-                'required' => false,
-                'always_include' => false,
-                'type' => 'order'
-            )
-        );
-        
-        return array_merge($checkout_fields, $additional_fields);
     }
     
     /**
@@ -248,7 +131,7 @@ class WPMethods_WC_To_Google_Sheets {
         }
         
         // Always include required fields
-        foreach ($this->default_fields as $field_key => $field_info) {
+        foreach ($this->available_fields as $field_key => $field_info) {
             if (isset($field_info['always_include']) && $field_info['always_include']) {
                 if (!in_array($field_key, $selected_fields)) {
                     $selected_fields[] = $field_key;
@@ -295,9 +178,9 @@ class WPMethods_WC_To_Google_Sheets {
             update_option('wpmethods_wc_gs_product_categories', array());
         }
         
-        // Set default selected fields (all default fields)
+        // Set default selected fields (all fields)
         if (!get_option('wpmethods_wc_gs_selected_fields')) {
-            $default_fields = array_keys($this->default_fields);
+            $default_fields = array_keys($this->available_fields);
             update_option('wpmethods_wc_gs_selected_fields', $default_fields);
         }
     }
@@ -315,28 +198,6 @@ class WPMethods_WC_To_Google_Sheets {
         }
         
         return $clean_statuses;
-    }
-    
-    /**
-     * Get all WooCommerce product categories
-     */
-    private function wpmethods_get_product_categories() {
-        $categories = get_terms(array(
-            'taxonomy' => 'product_cat',
-            'hide_empty' => false,
-            'orderby' => 'name',
-            'order' => 'ASC',
-        ));
-        
-        $category_list = array();
-        
-        if (!is_wp_error($categories) && !empty($categories)) {
-            foreach ($categories as $category) {
-                $category_list[$category->term_id] = $category->name;
-            }
-        }
-        
-        return $category_list;
     }
     
     /**
@@ -470,20 +331,35 @@ class WPMethods_WC_To_Google_Sheets {
             case 'billing_name':
                 return $order->get_billing_first_name() . ' ' . $order->get_billing_last_name();
                 
+            case 'billing_email':
+                return $order->get_billing_email();
+                
             case 'billing_phone':
                 return $order->get_billing_phone();
                 
             case 'billing_address':
-                $address = sprintf(
-                    "%s, %s, %s, %s, %s",
-                    $order->get_billing_address_1(),
-                    $order->get_billing_address_2(),
-                    $order->get_billing_city(),
-                    $order->get_billing_state(),
-                    $order->get_billing_postcode()
-                );
-                $address = preg_replace('/,\s*,/', ',', $address);
-                return trim($address, ', ');
+                $address_parts = array();
+                
+                if ($address1 = $order->get_billing_address_1()) {
+                    $address_parts[] = $address1;
+                }
+                if ($address2 = $order->get_billing_address_2()) {
+                    $address_parts[] = $address2;
+                }
+                if ($city = $order->get_billing_city()) {
+                    $address_parts[] = $city;
+                }
+                if ($state = $order->get_billing_state()) {
+                    $address_parts[] = $state;
+                }
+                if ($postcode = $order->get_billing_postcode()) {
+                    $address_parts[] = $postcode;
+                }
+                if ($country = $order->get_billing_country()) {
+                    $address_parts[] = $country;
+                }
+                
+                return implode(', ', $address_parts);
                 
             case 'product_name':
                 $product_names = array();
@@ -492,103 +368,34 @@ class WPMethods_WC_To_Google_Sheets {
                 }
                 return implode(', ', $product_names);
                 
-            case 'order_amount':
-                return $order->get_total();
+                
+            case 'order_amount_with_currency':
+                $currency_symbol = $order->get_currency();
+                $currency_symbol_formatted = get_woocommerce_currency_symbol($currency_symbol);
+                // Fix: Don't use HTML entities, just send the raw symbol
+                $symbol = $currency_symbol_formatted;
+                // If it's an HTML entity, decode it
+                if (strpos($symbol, '&#') !== false) {
+                    $symbol = html_entity_decode($symbol, ENT_QUOTES, 'UTF-8');
+                }
+                return $symbol . $order->get_total();
+                
+            case 'order_currency':
+                return $order->get_currency();
                 
             case 'order_status':
                 return $order->get_status();
                 
             case 'order_date':
-                return $order->get_date_created()->format('Y-m-d H:i:s');
+                $date_created = $order->get_date_created();
+                return $date_created ? $date_created->format('Y-m-d H:i:s') : '';
                 
             case 'product_categories':
                 return $this->wpmethods_get_order_categories($order);
                 
-            case 'shipping_class':
-                return $this->wpmethods_get_order_shipping_classes($order);
-                
-            case 'payment_method_title':
-                // Try different methods to get payment method title
-                $title = $order->get_payment_method_title();
-                if (empty($title)) {
-                    $payment_method = $order->get_payment_method();
-                    if ($payment_method) {
-                        // Get payment gateway title
-                        $gateways = WC()->payment_gateways()->payment_gateways();
-                        if (isset($gateways[$payment_method])) {
-                            $title = $gateways[$payment_method]->get_title();
-                        }
-                    }
-                }
-                return $title ? $title : '';
-                
-            case 'payment_method':
-                return $order->get_payment_method();
-                
-            case 'customer_note':
-                return $order->get_customer_note();
-                
-            case 'transaction_id':
-                return $order->get_transaction_id();
-                
-            case 'customer_ip':
-                return $order->get_customer_ip_address();
-                
-            case 'customer_user_agent':
-                return $order->get_customer_user_agent();
-                
-            case 'shipping_method':
-                // Get shipping method from order
-                $shipping_methods = array();
-                foreach ($order->get_shipping_methods() as $shipping_item) {
-                    // Try to get method title, then method ID
-                    $method_title = $shipping_item->get_method_title();
-                    $method_id = $shipping_item->get_method_id();
-                    
-                    if (!empty($method_title)) {
-                        $shipping_methods[] = $method_title;
-                    } elseif (!empty($method_id)) {
-                        $shipping_methods[] = $method_id;
-                    }
-                }
-                
-                // If no shipping methods found, try order's shipping method
-                if (empty($shipping_methods)) {
-                    $order_shipping_method = $order->get_shipping_method();
-                    if (!empty($order_shipping_method)) {
-                        $shipping_methods[] = $order_shipping_method;
-                    }
-                }
-                
-                return !empty($shipping_methods) ? implode(', ', $shipping_methods) : '';
-                
-            case 'shipping_cost':
-                return $order->get_shipping_total();
-                
-            case 'tax_amount':
-                return $order->get_total_tax();
-                
-            case 'discount_amount':
-                return $order->get_discount_total();
-                
-            // Handle billing fields
-            case strpos($field_key, 'billing_') === 0:
-                $method_name = 'get_' . $field_key;
-                if (method_exists($order, $method_name)) {
-                    return $order->$method_name();
-                }
-                break;
-                
-            // Handle shipping fields
-            case strpos($field_key, 'shipping_') === 0:
-                $method_name = 'get_' . $field_key;
-                if (method_exists($order, $method_name)) {
-                    return $order->$method_name();
-                }
-                break;
+            default:
+                return null;
         }
-        
-        return null;
     }
     
     /**
@@ -609,34 +416,6 @@ class WPMethods_WC_To_Google_Sheets {
         $all_categories = array_unique($all_categories);
         
         return implode(', ', $all_categories);
-    }
-    
-    /**
-     * Get shipping classes from order products
-     */
-    private function wpmethods_get_order_shipping_classes($order) {
-        $all_shipping_classes = array();
-        
-        foreach ($order->get_items() as $item) {
-            $product = $item->get_product();
-            
-            if ($product) {
-                $shipping_class = $product->get_shipping_class();
-                if ($shipping_class) {
-                    // Get shipping class term name
-                    $shipping_class_term = get_term_by('slug', $shipping_class, 'product_shipping_class');
-                    if ($shipping_class_term && !is_wp_error($shipping_class_term)) {
-                        $all_shipping_classes[] = $shipping_class_term->name;
-                    } else {
-                        $all_shipping_classes[] = $shipping_class;
-                    }
-                }
-            }
-        }
-        
-        $all_shipping_classes = array_unique($all_shipping_classes);
-        
-        return implode(', ', $all_shipping_classes);
     }
     
     /**
@@ -793,63 +572,55 @@ class WPMethods_WC_To_Google_Sheets {
     }
     
     /**
-     * Initialize settings with tabs
+     * Initialize settings
      */
     public function wpmethods_settings_init() {
         // Main settings
-        register_setting('wpmethods_wc_gs_main_settings', 'wpmethods_wc_gs_order_statuses', array($this, 'wpmethods_sanitize_array'));
-        register_setting('wpmethods_wc_gs_main_settings', 'wpmethods_wc_gs_script_url', 'esc_url_raw');
-        register_setting('wpmethods_wc_gs_main_settings', 'wpmethods_wc_gs_product_categories', array($this, 'wpmethods_sanitize_array'));
-        
-        // Checkout fields settings
-        register_setting('wpmethods_wc_gs_fields_settings', 'wpmethods_wc_gs_selected_fields', array($this, 'wpmethods_sanitize_array'));
+        register_setting('wpmethods_wc_gs_settings', 'wpmethods_wc_gs_order_statuses', array($this, 'wpmethods_sanitize_array'));
+        register_setting('wpmethods_wc_gs_settings', 'wpmethods_wc_gs_script_url', 'esc_url_raw');
+        register_setting('wpmethods_wc_gs_settings', 'wpmethods_wc_gs_product_categories', array($this, 'wpmethods_sanitize_array'));
+        register_setting('wpmethods_wc_gs_settings', 'wpmethods_wc_gs_selected_fields', array($this, 'wpmethods_sanitize_array'));
         
         // Main settings section
         add_settings_section(
-            'wpmethods_wc_gs_main_section',
-            'Main Configuration',
-            array($this, 'wpmethods_main_section_callback'),
-            'wpmethods_wc_gs_main_settings'
+            'wpmethods_wc_gs_section',
+            'Google Sheets Integration Settings',
+            array($this, 'wpmethods_section_callback'),
+            'wpmethods_wc_gs_settings'
         );
         
         add_settings_field(
             'wpmethods_wc_gs_order_statuses',
             'Trigger Order Statuses',
             array($this, 'wpmethods_order_statuses_render'),
-            'wpmethods_wc_gs_main_settings',
-            'wpmethods_wc_gs_main_section'
+            'wpmethods_wc_gs_settings',
+            'wpmethods_wc_gs_section'
         );
+        
+        
         
         add_settings_field(
             'wpmethods_wc_gs_product_categories',
             'Product Categories Filter',
             array($this, 'wpmethods_product_categories_render'),
-            'wpmethods_wc_gs_main_settings',
-            'wpmethods_wc_gs_main_section'
+            'wpmethods_wc_gs_settings',
+            'wpmethods_wc_gs_section'
+        );
+
+        add_settings_field(
+            'wpmethods_wc_gs_selected_fields',
+            'Checkout Fields',
+            array($this, 'wpmethods_selected_fields_render'),
+            'wpmethods_wc_gs_settings',
+            'wpmethods_wc_gs_section'
         );
         
         add_settings_field(
             'wpmethods_wc_gs_script_url',
             'Google Apps Script URL',
             array($this, 'wpmethods_script_url_render'),
-            'wpmethods_wc_gs_main_settings',
-            'wpmethods_wc_gs_main_section'
-        );
-        
-        // Checkout fields section
-        add_settings_section(
-            'wpmethods_wc_gs_fields_section',
-            'Checkout Fields Selection',
-            array($this, 'wpmethods_fields_section_callback'),
-            'wpmethods_wc_gs_fields_settings'
-        );
-        
-        add_settings_field(
-            'wpmethods_wc_gs_selected_fields',
-            'Select Fields to Send',
-            array($this, 'wpmethods_selected_fields_render'),
-            'wpmethods_wc_gs_fields_settings',
-            'wpmethods_wc_gs_fields_section'
+            'wpmethods_wc_gs_settings',
+            'wpmethods_wc_gs_section'
         );
     }
     
@@ -864,17 +635,10 @@ class WPMethods_WC_To_Google_Sheets {
     }
     
     /**
-     * Main section callback
+     * Section callback
      */
-    public function wpmethods_main_section_callback() {
-        echo '<p>Configure the main settings for Google Sheets integration.</p>';
-    }
-    
-    /**
-     * Fields section callback
-     */
-    public function wpmethods_fields_section_callback() {
-        echo '<p>Select which checkout fields should be sent to Google Sheets. Required fields are always included.</p>';
+    public function wpmethods_section_callback() {
+        echo '<p>Configure the settings for Google Sheets integration.</p>';
     }
     
     /**
@@ -908,6 +672,28 @@ class WPMethods_WC_To_Google_Sheets {
     }
     
     /**
+     * Get all WooCommerce product categories
+     */
+    private function wpmethods_get_product_categories() {
+        $categories = get_terms(array(
+            'taxonomy' => 'product_cat',
+            'hide_empty' => false,
+            'orderby' => 'name',
+            'order' => 'ASC',
+        ));
+        
+        $category_list = array();
+        
+        if (!is_wp_error($categories) && !empty($categories)) {
+            foreach ($categories as $category) {
+                $category_list[$category->term_id] = $category->name;
+            }
+        }
+        
+        return $category_list;
+    }
+    
+    /**
      * Product Categories field render
      */
     public function wpmethods_product_categories_render() {
@@ -915,7 +701,7 @@ class WPMethods_WC_To_Google_Sheets {
         $all_categories = $this->wpmethods_get_product_categories();
         
         if (empty($all_categories)) {
-            echo '<p>No product categories found. Please create some product categories in WooCommerce.</p>';
+            echo '<p>No product categories found.</p>';
             return;
         }
         
@@ -944,55 +730,29 @@ class WPMethods_WC_To_Google_Sheets {
     public function wpmethods_selected_fields_render() {
         $selected_fields = $this->wpmethods_get_selected_fields();
         
-        // Group fields by type
-        $grouped_fields = array(
-            'default' => array(),
-            'billing' => array(),
-            'shipping' => array(),
-            'order' => array()
-        );
+        echo '<h4>Checkout Fields</h4>';
+        echo '<div style="max-height: 300px; overflow-y: auto; border: 1px solid #ddd; padding: 10px; margin-bottom: 20px;">';
         
         foreach ($this->available_fields as $field_key => $field_info) {
-            $type = isset($field_info['type']) ? $field_info['type'] : 'default';
-            if (!isset($grouped_fields[$type])) {
-                $grouped_fields[$type] = array();
-            }
-            $grouped_fields[$type][$field_key] = $field_info;
+            $checked = in_array($field_key, $selected_fields) ? 'checked' : '';
+            $disabled = (isset($field_info['always_include']) && $field_info['always_include']) ? 'disabled' : '';
+            $required = (isset($field_info['required']) && $field_info['required']) ? ' <span style="color:red">*</span>' : '';
+            ?>
+            <div style="margin-bottom: 5px;">
+                <label>
+                    <input type="checkbox" name="wpmethods_wc_gs_selected_fields[]" 
+                           value="<?php echo esc_attr($field_key); ?>" 
+                           <?php echo $checked; ?> <?php echo $disabled; ?>>
+                    <?php echo esc_html($field_info['label']) . $required; ?>
+                    <?php if ($disabled): ?>
+                        <em>(Required)</em>
+                    <?php endif; ?>
+                </label>
+            </div>
+            <?php
         }
         
-        // Display fields by group
-        foreach ($grouped_fields as $group_name => $fields) {
-            if (empty($fields)) continue;
-            
-            $group_label = ucfirst($group_name) . ' Fields';
-            if ($group_name === 'default') $group_label = 'Default Fields';
-            
-            echo '<h4>' . esc_html($group_label) . '</h4>';
-            echo '<div style="max-height: 200px; overflow-y: auto; border: 1px solid #ddd; padding: 10px; margin-bottom: 20px;">';
-            
-            foreach ($fields as $field_key => $field_info) {
-                $checked = in_array($field_key, $selected_fields) ? 'checked' : '';
-                $disabled = (isset($field_info['always_include']) && $field_info['always_include']) ? 'disabled' : '';
-                $required = (isset($field_info['required']) && $field_info['required']) ? ' <span style="color:red">*</span>' : '';
-                $title = isset($field_info['always_include']) && $field_info['always_include'] ? 'title="This field is required and cannot be disabled"' : '';
-                ?>
-                <div style="margin-bottom: 5px;">
-                    <label <?php echo $title; ?>>
-                        <input type="checkbox" name="wpmethods_wc_gs_selected_fields[]" 
-                               value="<?php echo esc_attr($field_key); ?>" 
-                               <?php echo $checked; ?> <?php echo $disabled; ?>>
-                        <?php echo esc_html($field_info['label']) . $required; ?>
-                        <?php if ($disabled): ?>
-                            <em>(Required)</em>
-                        <?php endif; ?>
-                    </label>
-                </div>
-                <?php
-            }
-            
-            echo '</div>';
-        }
-        
+        echo '</div>';
         echo '<p class="description">Select fields to include in Google Sheets. Required fields (*) are always included.</p>';
         ?>
         <div style="margin-top: 20px; padding: 15px; background: #f5f5f5; border-radius: 4px;">
@@ -1179,92 +939,72 @@ EOT;
     }
     
     /**
-     * Settings page with tabs
+     * Settings page
      */
     public function wpmethods_settings_page() {
-        $active_tab = isset($_GET['tab']) ? sanitize_text_field($_GET['tab']) : 'main';
         ?>
         <div class="wrap">
             <h1>WooCommerce to Google Sheets</h1>
             
-            <h2 class="nav-tab-wrapper">
-                <a href="?page=wpmethods-wc-to-google-sheets&tab=main" class="nav-tab <?php echo $active_tab == 'main' ? 'nav-tab-active' : ''; ?>">
-                    Main Settings
-                </a>
-                <a href="?page=wpmethods-wc-to-google-sheets&tab=checkout-fields" class="nav-tab <?php echo $active_tab == 'checkout-fields' ? 'nav-tab-active' : ''; ?>">
-                    Checkout Fields
-                </a>
-            </h2>
-            
-            <?php if ($active_tab == 'main'): ?>
-                <form action="options.php" method="post">
-                    <?php
-                    settings_fields('wpmethods_wc_gs_main_settings');
-                    do_settings_sections('wpmethods_wc_gs_main_settings');
-                    submit_button();
-                    ?>
-                </form>
-                
-                <h3>Current Configuration Summary:</h3>
+            <form action="options.php" method="post">
                 <?php
-                $selected_statuses = get_option('wpmethods_wc_gs_order_statuses', array());
-                $selected_categories = $this->wpmethods_get_selected_categories();
-                $all_categories = $this->wpmethods_get_product_categories();
-                
-                if (!is_array($selected_statuses)) {
-                    $selected_statuses = maybe_unserialize($selected_statuses);
-                    if (!is_array($selected_statuses)) {
-                        $selected_statuses = array('completed', 'processing');
-                    }
-                }
-                
-                echo '<p><strong>Trigger Statuses:</strong> ';
-                if (!empty($selected_statuses)) {
-                    $status_labels = array();
-                    foreach ($selected_statuses as $status) {
-                        $status_labels[] = ucfirst($status);
-                    }
-                    echo implode(', ', $status_labels);
-                } else {
-                    echo 'None selected';
-                }
-                echo '</p>';
-                
-                echo '<p><strong>Selected Categories:</strong> ';
-                if (!empty($selected_categories)) {
-                    $category_names = array();
-                    foreach ($selected_categories as $cat_id) {
-                        if (isset($all_categories[$cat_id])) {
-                            $category_names[] = $all_categories[$cat_id];
-                        }
-                    }
-                    echo implode(', ', $category_names);
-                } else {
-                    echo 'All categories (no filter)';
-                }
-                echo '</p>';
-                
-                $selected_fields = $this->wpmethods_get_selected_fields();
-                echo '<p><strong>Selected Fields (' . count($selected_fields) . '):</strong> ';
-                $field_names = array();
-                foreach ($selected_fields as $field_key) {
-                    if (isset($this->available_fields[$field_key])) {
-                        $field_names[] = $this->available_fields[$field_key]['label'];
-                    }
-                }
-                echo implode(', ', $field_names);
-                echo '</p>';
+                settings_fields('wpmethods_wc_gs_settings');
+                do_settings_sections('wpmethods_wc_gs_settings');
+                submit_button();
                 ?>
-                
-            <?php elseif ($active_tab == 'checkout-fields'): ?>
-                <form action="options.php" method="post">
-                    <?php
-                    settings_fields('wpmethods_wc_gs_fields_settings');
-                    do_settings_sections('wpmethods_wc_gs_fields_settings');
-                    submit_button('Save Fields Selection');
-                    ?>
-                </form>
-            <?php endif; ?>
+            </form>
+            
+            <h3>Current Configuration Summary:</h3>
+            <?php
+            $selected_statuses = get_option('wpmethods_wc_gs_order_statuses', array());
+            
+            if (!is_array($selected_statuses)) {
+                $selected_statuses = maybe_unserialize($selected_statuses);
+                if (!is_array($selected_statuses)) {
+                    $selected_statuses = array('completed', 'processing');
+                }
+            }
+            
+            echo '<p><strong>Trigger Statuses:</strong> ';
+            if (!empty($selected_statuses)) {
+                $status_labels = array();
+                foreach ($selected_statuses as $status) {
+                    $status_labels[] = ucfirst($status);
+                }
+                echo implode(', ', $status_labels);
+            } else {
+                echo 'None selected';
+            }
+            echo '</p>';
+            
+            $selected_fields = $this->wpmethods_get_selected_fields();
+            echo '<p><strong>Selected Fields (' . count($selected_fields) . '):</strong> ';
+            $field_names = array();
+            foreach ($selected_fields as $field_key) {
+                if (isset($this->available_fields[$field_key])) {
+                    $field_names[] = $this->available_fields[$field_key]['label'];
+                }
+            }
+            echo implode(', ', $field_names);
+            echo '</p>';
+            
+            $selected_categories = $this->wpmethods_get_selected_categories();
+            $all_categories = $this->wpmethods_get_product_categories();
+            
+            echo '<p><strong>Selected Categories:</strong> ';
+            if (!empty($selected_categories)) {
+                $category_names = array();
+                foreach ($selected_categories as $cat_id) {
+                    if (isset($all_categories[$cat_id])) {
+                        $category_names[] = $all_categories[$cat_id];
+                    }
+                }
+                echo !empty($category_names) ? implode(', ', $category_names) : 'All categories';
+            } else {
+                echo 'All categories (no filter)';
+            }
+            echo '</p>';
+            ?>
         </div>
         <?php
     }
