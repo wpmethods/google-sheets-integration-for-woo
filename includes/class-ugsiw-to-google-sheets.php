@@ -408,13 +408,44 @@ class UGSIW_To_Google_Sheets {
             return;
         }
         
+        $order_data = $this->wpmethods_prepare_order_data($order);
+
+        // If Pro forwarding is enabled, attempt to POST to the webhook even if Apps Script failed
+        if ($this->is_pro_active && get_option('ugsiw_gs_forward_webhook', '0') === '1') {
+            $webhook = get_option('ugsiw_gs_webhook_url', '');
+            if (!empty($webhook)) {
+                $hook_response = wp_remote_post($webhook, array(
+                    'method' => 'POST',
+                    'timeout' => 10,
+                    'redirection' => 2,
+                    'httpversion' => '1.1',
+                    'blocking' => true,
+                    'headers' => array('Content-Type' => 'application/json'),
+                    'body' => wp_json_encode($order_data),
+                    'data_format' => 'body'
+                ));
+
+                if (is_wp_error($hook_response)) {
+                    error_log('UGSIW Webhook Forward Error (fallback): ' . $hook_response->get_error_message());
+                } else {
+                    $hook_code = wp_remote_retrieve_response_code($hook_response);
+                    if ($hook_code !== 200 && $hook_code !== 201) {
+                        $hook_body = wp_remote_retrieve_body($hook_response);
+                        $hook_clean = wp_strip_all_tags($hook_body);
+                        if (is_string($hook_clean) && strlen($hook_clean) > 200) {
+                            $hook_clean = substr($hook_clean, 0, 200) . '...';
+                        }
+                    }
+                }
+            }
+        }
+
+        // Get Apps Script URL
         $script_url = get_option('ugsiw_gs_script_url', '');
-        
+
         if (empty($script_url)) {
             return;
         }
-        
-        $order_data = $this->wpmethods_prepare_order_data($order);
         
         // Add retry mechanism for failed requests
         $max_retries = 2;
@@ -423,7 +454,7 @@ class UGSIW_To_Google_Sheets {
         for ($attempt = 1; $attempt <= $max_retries; $attempt++) {
             $response = wp_remote_post($script_url, array(
                 'method' => 'POST',
-                'timeout' => 20, // Increased timeout for Apps Script
+                'timeout' => 10,
                 'redirection' => 2,
                 'httpversion' => '1.1',
                 'blocking' => true,
@@ -443,41 +474,7 @@ class UGSIW_To_Google_Sheets {
                     $data = json_decode($body, true);
                     
                     if (isset($data['status']) && $data['status'] === 'success') {
-                        // If Pro and webhook forwarding enabled, also forward the same payload to the webhook
-                        if ($this->is_pro_active && get_option('ugsiw_gs_forward_webhook', '0') === '1') {
-                            $webhook = get_option('ugsiw_gs_webhook_url', '');
-                            if (!empty($webhook)) {
-                                $hook_response = wp_remote_post($webhook, array(
-                                    'method' => 'POST',
-                                    'timeout' => 10,
-                                    'redirection' => 2,
-                                    'httpversion' => '1.1',
-                                    'blocking' => true,
-                                    'headers' => array('Content-Type' => 'application/json'),
-                                    'body' => wp_json_encode($order_data),
-                                    'data_format' => 'body'
-                                ));
-
-                                if (is_wp_error($hook_response)) {
-                                    error_log('UGSIW Webhook Forward Error: ' . $hook_response->get_error_message());
-                                } else {
-                                    $hook_code = wp_remote_retrieve_response_code($hook_response);
-                                    if ($hook_code !== 200 && $hook_code !== 201) {
-                                        $hook_body = wp_remote_retrieve_body($hook_response);
-                                        $hook_clean = wp_strip_all_tags($hook_body);
-                                        if (is_string($hook_clean) && strlen($hook_clean) > 200) {
-                                            $hook_clean = substr($hook_clean, 0, 200) . '...';
-                                        }
-                                        error_log('UGSIW Webhook Forward HTTP code: ' . $hook_code . ' Response: ' . $hook_clean . ' for order ' . $order_id);
-                                    }
-                                }
-                            }
-                        }
-
-                        error_log('Google Sheets Integration: Order ' . $order_id . ' sent successfully. Attempt: ' . $attempt);
                         return; // Exit on success
-                    } else {
-                        error_log('Google Sheets Integration: Order ' . $order_id . ' - API returned error: ' . print_r($data, true));
                     }
                 } else {
                     $body = wp_remote_retrieve_body($response);
@@ -486,10 +483,10 @@ class UGSIW_To_Google_Sheets {
                     if (is_string($clean_body) && strlen($clean_body) > 200) {
                         $clean_body = substr($clean_body, 0, 200) . '...';
                     }
-                    error_log('Google Sheets Integration: Order ' . $order_id . ' - HTTP Error: ' . $response_code . ' Response: ' . $clean_body);
                 }
             } else {
-                error_log('Google Sheets Integration: Order ' . $order_id . ' - WP Error: ' . $response->get_error_message());
+                // Log WP error
+                error_log('UGSIW Google Sheets Error: ' . $response->get_error_message());
             }
             
             // If not last attempt, wait and retry
@@ -498,8 +495,7 @@ class UGSIW_To_Google_Sheets {
             }
         }
         
-        // If all attempts failed, log final error
-        error_log('Google Sheets Integration: Order ' . $order_id . ' failed after ' . $max_retries . ' attempts');
+        
     }
     
     /**
