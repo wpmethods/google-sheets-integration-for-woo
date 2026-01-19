@@ -1,6 +1,6 @@
 jQuery(document).ready(function($) {
     // Generate Google Apps Script
-    $("#wpmethods-generate-script").on("click", function(e) {
+    $("#ugsiw-generate-script").on("click", function(e) {
         e.preventDefault();
         
         var button = $(this);
@@ -18,16 +18,16 @@ jQuery(document).ready(function($) {
             url: ugsiw_gs.ajax_url,
             type: "POST",
             data: {
-                action: "wpmethods_generate_google_script",
+                action: "ugsiw_generate_google_script",
                 nonce: ugsiw_gs.nonce,
                 fields: selectedFields
             },
             success: function(response) {
                 if (response.success) {
-                    $("#wpmethods-generated-script").val(response.data.script);
-                    $("#wpmethods-script-output").show();
+                    $("#ugsiw-generated-script").val(response.data.script);
+                    $("#ugsiw-script-output").show();
                     $("html, body").animate({
-                        scrollTop: $("#wpmethods-script-output").offset().top - 100
+                        scrollTop: $("#ugsiw-script-output").offset().top - 100
                     }, 500);
                 } else {
                     alert("Error generating script. Please try again.");
@@ -43,12 +43,12 @@ jQuery(document).ready(function($) {
     });
 
     // Copy to clipboard
-    $("#wpmethods-copy-script").on("click", function() {
-        var textarea = $("#wpmethods-generated-script")[0];
+    $("#ugsiw-copy-script").on("click", function() {
+        var textarea = $("#ugsiw-generated-script")[0];
         textarea.select();
         document.execCommand("copy");
         
-        $("#wpmethods-copy-status").show().fadeOut(2000);
+        $("#ugsiw-copy-status").show().fadeOut(2000);
     });
 
     // Handle required fields
@@ -66,15 +66,15 @@ jQuery(document).ready(function($) {
     });
 
     // Toggle fields visibility
-    $(".wpmethods-field-category h3").on("click", function() {
-        $(this).next(".wpmethods-fields-grid").slideToggle(300);
+    $(".ugsiw-field-category h3").on("click", function() {
+        $(this).next(".ugsiw-fields-grid").slideToggle(300);
         $(this).find(".dashicons").toggleClass("dashicons-arrow-down dashicons-arrow-up");
     });
 
     // Search fields
-    $("#wpmethods-field-search").on("keyup", function() {
+    $("#ugsiw-field-search").on("keyup", function() {
         var search = $(this).val().toLowerCase();
-        $(".wpmethods-field-item").each(function() {
+        $(".ugsiw-field-item").each(function() {
             var label = $(this).find("label").text().toLowerCase();
             if (label.indexOf(search) > -1) {
                 $(this).show();

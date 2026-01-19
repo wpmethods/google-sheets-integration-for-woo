@@ -1,4 +1,4 @@
-.wpmethods-settings-wrapper {
+.ugsiw-settings-wrapper {
     max-width: 1200px;
     margin: 0 auto;
 }
@@ -7,7 +7,7 @@
     color: red;
 }
 
-.wpmethods-header {
+.ugsiw-header {
     background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
     color: white;
     padding: 30px;
@@ -18,7 +18,7 @@
     overflow: hidden;
 }
 
-.wpmethods-header::before {
+.ugsiw-header::before {
     content: "";
     position: absolute;
     top: 0;
@@ -29,28 +29,28 @@
     background-size: cover;
 }
 
-.wpmethods-header h1 {
+.ugsiw-header h1 {
     color: white;
     margin: 0 0 10px 0;
     font-size: 28px;
     position: relative;
 }
 
-.wpmethods-header p {
+.ugsiw-header p {
     color: rgba(255,255,255,0.9);
     font-size: 16px;
     margin: 0;
     position: relative;
 }
 
-.wpmethods-dashboard {
+.ugsiw-dashboard {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
     gap: 20px;
     margin-bottom: 30px;
 }
 
-.wpmethods-card {
+.ugsiw-card {
     background: white;
     border-radius: 8px;
     padding: 25px;
@@ -58,7 +58,7 @@
     border: 1px solid #e0e0e0;
 }
 
-.wpmethods-card h3 {
+.ugsiw-card h3 {
     margin-top: 0;
     padding-bottom: 15px;
     border-bottom: 2px solid #f0f0f0;
@@ -69,11 +69,11 @@
     gap: 10px;
 }
 
-.wpmethods-card h3 .dashicons {
+.ugsiw-card h3 .dashicons {
     color: #667eea;
 }
 
-.wpmethods-field-category {
+.ugsiw-field-category {
     background: white;
     border-radius: 8px;
     padding: 0;
@@ -82,7 +82,7 @@
     border: 1px solid #e0e0e0;
 }
 
-.wpmethods-field-category h3 {
+.ugsiw-field-category h3 {
     margin: 0;
     padding: 20px;
     cursor: pointer;
@@ -94,15 +94,15 @@
     border-bottom: 1px solid #e0e0e0;
 }
 
-.wpmethods-field-category h3:hover {
+.ugsiw-field-category h3:hover {
     background: #f0f2f5;
 }
 
-.wpmethods-field-category h3 .dashicons {
+.ugsiw-field-category h3 .dashicons {
     transition: transform 0.3s ease;
 }
 
-.wpmethods-fields-grid {
+.ugsiw-fields-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
     gap: 15px;
@@ -111,7 +111,7 @@
     overflow-y: auto;
 }
 
-.wpmethods-field-item {
+.ugsiw-field-item {
     background: #f8f9fa;
     border-radius: 6px;
     padding: 15px;
@@ -119,14 +119,14 @@
     transition: all 0.3s ease;
 }
 
-.wpmethods-field-item:hover {
+.ugsiw-field-item:hover {
     background: #f0f2f5;
     border-color: #667eea;
     transform: translateY(-2px);
     box-shadow: 0 4px 12px rgba(0,0,0,0.1);
 }
 
-.wpmethods-field-item label {
+.ugsiw-field-item label {
     display: flex;
     align-items: center;
     cursor: pointer;
@@ -135,19 +135,19 @@
     gap: 10px;
 }
 
-.wpmethods-field-item input[type="checkbox"] {
+.ugsiw-field-item input[type="checkbox"] {
     width: 18px;
     height: 18px;
     border-radius: 4px;
     border: 2px solid #ccc;
 }
 
-.wpmethods-field-item input[type="checkbox"]:checked {
+.ugsiw-field-item input[type="checkbox"]:checked {
     background-color: #d7d7d7;
     border-color: #667eea;
 }
 
-.wpmethods-field-item .required {
+.ugsiw-field-item .required {
     color: #dc3545;
     font-weight: bold;
     margin-left: auto;
@@ -157,11 +157,11 @@
     border-radius: 12px;
 }
 
-.wpmethods-search-box {
+.ugsiw-search-box {
     margin-bottom: 20px;
 }
 
-.wpmethods-search-box input {
+.ugsiw-search-box input {
     width: 100%;
     padding: 12px 20px 12px 45px;
     border: 2px solid #e0e0e0;
@@ -171,13 +171,13 @@
     background-size: 20px;
 }
 
-.wpmethods-search-box input:focus {
+.ugsiw-search-box input:focus {
     outline: none;
     border-color: #667eea;
     box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
 }
 
-.wpmethods-generated-script {
+.ugsiw-generated-script {
     font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, Courier, monospace;
     font-size: 13px;
     line-height: 1.6;
@@ -188,11 +188,11 @@
     border: 1px solid #333;
 }
 
-#wpmethods-script-output {
+#ugsiw-script-output {
     animation: fadeIn 0.3s ease-in;
 }
 
-.wpmethods-feature-box {
+.ugsiw-feature-box {
     background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
     border-radius: 8px;
     padding: 25px;
@@ -200,7 +200,7 @@
     border-left: 4px solid #667eea;
 }
 
-.wpmethods-button {
+.ugsiw-button {
     background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
     color: white;
     border: none;
@@ -214,27 +214,27 @@
     transition: all 0.3s ease;
 }
 
-.wpmethods-button:hover {
+.ugsiw-button:hover {
     transform: translateY(-2px);
     box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
 }
 
-.wpmethods-button-secondary {
+.ugsiw-button-secondary {
     background: #6c757d;
 }
 
-.wpmethods-button-secondary:hover {
+.ugsiw-button-secondary:hover {
     background: #5a6268;
 }
 
-.wpmethods-stats-grid {
+.ugsiw-stats-grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
     gap: 15px;
     margin: 20px 0;
 }
 
-.wpmethods-stat {
+.ugsiw-stat {
     background: white;
     padding: 20px;
     border-radius: 8px;
@@ -242,19 +242,19 @@
     box-shadow: 0 2px 8px rgba(0,0,0,0.05);
 }
 
-.wpmethods-stat-number {
+.ugsiw-stat-number {
     font-size: 32px;
     font-weight: bold;
     color: #667eea;
     margin-bottom: 5px;
 }
 
-.wpmethods-stat-label {
+.ugsiw-stat-label {
     color: #666;
     font-size: 14px;
 }
 
-.wpmethods-donation-box {
+.ugsiw-donation-box {
     background: linear-gradient(135deg, #ffd700 0%, #ffed4e 100%);
     border-radius: 8px;
     padding: 25px;
@@ -263,12 +263,12 @@
     border: 2px solid #ffc107;
 }
 
-.wpmethods-donation-box h3 {
+.ugsiw-donation-box h3 {
     color: #856404;
     margin-top: 0;
 }
 
-.wpmethods-donation-button {
+.ugsiw-donation-button {
     background: #856404;
     color: white;
     border: none;
@@ -282,14 +282,14 @@
     transition: all 0.3s ease;
 }
 
-.wpmethods-donation-button:hover {
+.ugsiw-donation-button:hover {
     background: #a47c05;
     color: white;
     transform: translateY(-2px);
     box-shadow: 0 5px 15px rgba(133, 100, 4, 0.3);
 }
 
-.wpmethods-video-box {
+.ugsiw-video-box {
     background: linear-gradient(135deg, #dc3545 0%, #e4606d 100%);
     border-radius: 8px;
     padding: 25px;
@@ -298,12 +298,12 @@
     color: white;
 }
 
-.wpmethods-video-box h3 {
+.ugsiw-video-box h3 {
     color: white;
     margin-top: 0;
 }
 
-.wpmethods-video-button {
+.ugsiw-video-button {
     background: white;
     color: #dc3545;
     border: none;
@@ -317,7 +317,7 @@
     transition: all 0.3s ease;
 }
 
-.wpmethods-video-button:hover {
+.ugsiw-video-button:hover {
     background: #f8f9fa;
     color: #c82333;
     transform: translateY(-2px);
@@ -330,11 +330,11 @@
 }
 
 @media (max-width: 768px) {
-    .wpmethods-dashboard {
+    .ugsiw-dashboard {
         grid-template-columns: 1fr;
     }
     
-    .wpmethods-fields-grid {
+    .ugsiw-fields-grid {
         grid-template-columns: 1fr;
     }
 }
@@ -342,7 +342,7 @@
 
 
 /* More Products Section */
-.wpmethods-products-box {
+.ugsiw-products-box {
     background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
     border-radius: 8px;
     padding: 25px;
@@ -350,7 +350,7 @@
     color: white;
 }
 
-.wpmethods-products-box h3 {
+.ugsiw-products-box h3 {
     color: white;
     margin-top: 0;
     display: flex;
@@ -359,18 +359,18 @@
     font-size: 22px;
 }
 
-.wpmethods-products-box h3 .dashicons {
+.ugsiw-products-box h3 .dashicons {
     color: white;
 }
 
-.wpmethods-products-box p {
+.ugsiw-products-box p {
     color: rgb(226 226 226 / 90%);
     margin-bottom: 20px;
     font-size: 16px;
 }
 
 /* Products Grid */
-.wpmethods-products-grid {
+.ugsiw-products-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
     gap: 20px;
@@ -378,7 +378,7 @@
 }
 
 /* Product Card */
-.wpmethods-product-card {
+.ugsiw-product-card {
     background: white;
     border-radius: 8px;
     overflow: hidden;
@@ -387,20 +387,20 @@
     border: 1px solid #e0e0e0;
 }
 
-.wpmethods-product-card:hover {
+.ugsiw-product-card:hover {
     transform: translateY(-5px);
     box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15);
     border-color: #28a745;
 }
 
-.wpmethods-product-card img {
+.ugsiw-product-card img {
     width: 100%;
     height: 250px;
     object-fit: cover;
     border-bottom: 1px solid #e0e0e0;
 }
 
-.wpmethods-product-card h4 {
+.ugsiw-product-card h4 {
     padding: 15px;
     margin: 0;
     color: #333;
@@ -410,7 +410,7 @@
     min-height: 60px;
 }
 
-.wpmethods-product-button {
+.ugsiw-product-button {
     display: block;
     background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
     color: white;
@@ -425,7 +425,7 @@
     border-radius: 6px;
 }
 
-.wpmethods-product-button:hover {
+.ugsiw-product-button:hover {
     background: linear-gradient(135deg, #218838 0%, #1ca87e 100%);
     transform: translateY(-2px);
     box-shadow: 0 5px 15px rgba(40, 167, 69, 0.4);
@@ -433,7 +433,7 @@
 }
 
 /* View More Button */
-.wpmethods-products-box .wpmethods-button {
+.ugsiw-products-box .ugsiw-button {
     background: white;
     color: #28a745;
     border: 2px solid white;
@@ -441,7 +441,7 @@
     font-size: 16px;
 }
 
-.wpmethods-products-box .wpmethods-button:hover {
+.ugsiw-products-box .ugsiw-button:hover {
     background: transparent;
     color: white;
     border-color: white;
@@ -450,42 +450,42 @@
 
 /* Responsive Design */
 @media (max-width: 1200px) {
-    .wpmethods-products-grid {
+    .ugsiw-products-grid {
         grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
     }
 }
 
 @media (max-width: 992px) {
-    .wpmethods-products-grid {
+    .ugsiw-products-grid {
         grid-template-columns: repeat(2, 1fr);
     }
 }
 
 @media (max-width: 768px) {
-    .wpmethods-products-grid {
+    .ugsiw-products-grid {
         grid-template-columns: 1fr;
     }
     
-    .wpmethods-product-card img {
+    .ugsiw-product-card img {
         height: 270px;
     }
     
-    .wpmethods-products-box {
+    .ugsiw-products-box {
         padding: 20px;
     }
 }
 
 @media (max-width: 480px) {
-    .wpmethods-products-box h3 {
+    .ugsiw-products-box h3 {
         font-size: 20px;
     }
     
-    .wpmethods-product-card h4 {
+    .ugsiw-product-card h4 {
         font-size: 15px;
         min-height: auto;
     }
     
-    .wpmethods-product-card img {
+    .ugsiw-product-card img {
         height: 220px;
     }
 }
@@ -502,27 +502,27 @@
     }
 }
 
-.wpmethods-product-card {
+.ugsiw-product-card {
     animation: slideUp 0.5s ease forwards;
 }
 
 /* Stagger the animations for grid items */
-.wpmethods-products-grid .wpmethods-product-card:nth-child(1) {
+.ugsiw-products-grid .ugsiw-product-card:nth-child(1) {
     animation-delay: 0.1s;
 }
 
-.wpmethods-products-grid .wpmethods-product-card:nth-child(2) {
+.ugsiw-products-grid .ugsiw-product-card:nth-child(2) {
     animation-delay: 0.2s;
 }
 
-.wpmethods-products-grid .wpmethods-product-card:nth-child(3) {
+.ugsiw-products-grid .ugsiw-product-card:nth-child(3) {
     animation-delay: 0.3s;
 }
 
-.wpmethods-products-grid .wpmethods-product-card:nth-child(4) {
+.ugsiw-products-grid .ugsiw-product-card:nth-child(4) {
     animation-delay: 0.4s;
 }
 
-.wpmethods-products-grid .wpmethods-product-card:nth-child(5) {
+.ugsiw-products-grid .ugsiw-product-card:nth-child(5) {
     animation-delay: 0.5s;
 }

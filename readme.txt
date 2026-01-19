@@ -51,7 +51,7 @@ Made with love by [WP Methods](https://wpmethods.com)
 
 Getting Started
 
-1. Just go to Settings> WC to Google Sheets and Active Features.
+1. Just go to WP-Admin>WC Orders to Google Sheets and Active Features.
 
 == Frequently Asked Questions ==
 

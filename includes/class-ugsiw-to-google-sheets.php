@@ -21,26 +21,28 @@ class UGSIW_To_Google_Sheets {
         $this->define_available_fields();
         
         // Check if WooCommerce is active
-        add_action('admin_init', array($this, 'wpmethods_check_woocommerce'));
+        add_action('admin_init', array($this, 'ugsiw_check_woocommerce'));
 
         // Initialize script generator
         $this->script_generator = new UGSIW_Script_Generator($this->available_fields);
         
         // Hook into order status changes
-        add_action('woocommerce_order_status_changed', array($this, 'wpmethods_send_order_to_sheets'), 10, 4);
+        add_action('woocommerce_order_status_changed', array($this, 'ugsiw_send_order_to_sheets'), 10, 4);
+        // Background processing hook (Action Scheduler if available)
+        add_action('ugsiw_send_order_to_sheets', array($this, 'ugsiw_process_send_order'), 10, 1);
         
         // Add settings page
-        add_action('admin_menu', array($this, 'wpmethods_add_admin_menu'));
-        add_action('admin_init', array($this, 'wpmethods_settings_init'));
+        add_action('admin_menu', array($this, 'ugsiw_add_admin_menu'));
+        add_action('admin_init', array($this, 'ugsiw_settings_init'));
         
         // Add admin scripts
-        add_action('admin_enqueue_scripts', array($this, 'wpmethods_admin_scripts'));
+        add_action('admin_enqueue_scripts', array($this, 'ugsiw_admin_scripts'));
         
         // AJAX handler for generating Google Apps Script
-        add_action('wp_ajax_wpmethods_generate_google_script', array($this, 'wpmethods_generate_google_script_ajax'));
+        add_action('wp_ajax_ugsiw_generate_google_script', array($this, 'ugsiw_generate_google_script_ajax'));
         
         // Register activation hook to set default values
-        register_activation_hook(__FILE__, array($this, 'wpmethods_activate_plugin'));
+        register_activation_hook(__FILE__, array($this, 'ugsiw_activate_plugin'));
     }
     
     /**
@@ -192,7 +194,7 @@ class UGSIW_To_Google_Sheets {
     /**
      * Get selected fields for Google Sheets
      */
-    private function wpmethods_get_selected_fields() {
+    private function ugsiw_get_selected_fields() {
         $selected_fields = get_option('ugsiw_gs_selected_fields', array());
         
         // Ensure it's always an array
@@ -224,16 +226,16 @@ class UGSIW_To_Google_Sheets {
     /**
      * Check if WooCommerce is active
      */
-    public function wpmethods_check_woocommerce() {
+    public function ugsiw_check_woocommerce() {
         if (!class_exists('WooCommerce')) {
-            add_action('admin_notices', array($this, 'wpmethods_woocommerce_missing_notice'));
+            add_action('admin_notices', array($this, 'ugsiw_woocommerce_missing_notice'));
         }
     }
     
     /**
      * WooCommerce missing notice
      */
-    public function wpmethods_woocommerce_missing_notice() {
+    public function ugsiw_woocommerce_missing_notice() {
         ?>
         <div class="notice notice-error">
             <p><?php esc_html_e('WP Methods WooCommerce to Google Sheets requires WooCommerce to be installed and activated.', 'send-orders-to-google-sheets-for-woocommerce'); ?></p>
@@ -244,7 +246,7 @@ class UGSIW_To_Google_Sheets {
     /**
      * Plugin activation - set default values
      */
-    public function wpmethods_activate_plugin() {
+    public function ugsiw_activate_plugin() {
         if (!get_option('ugsiw_gs_order_statuses')) {
             update_option('ugsiw_gs_order_statuses', array('completed', 'processing'));
         }
@@ -267,7 +269,7 @@ class UGSIW_To_Google_Sheets {
     /**
      * Get all WooCommerce order statuses
      */
-    private function wpmethods_get_wc_order_statuses() {
+    private function ugsiw_get_wc_order_statuses() {
         $statuses = wc_get_order_statuses();
         $clean_statuses = array();
         
@@ -282,7 +284,7 @@ class UGSIW_To_Google_Sheets {
     /**
      * Get selected categories as array
      */
-    private function wpmethods_get_selected_categories() {
+    private function ugsiw_get_selected_categories() {
         $selected_categories = get_option('ugsiw_gs_product_categories', array());
         
         if (!is_array($selected_categories)) {
@@ -346,7 +348,7 @@ class UGSIW_To_Google_Sheets {
     /**
      * Check if order contains products from selected categories
      */
-    private function wpmethods_order_has_selected_categories($order, $selected_categories) {
+    private function ugsiw_order_has_selected_categories($order, $selected_categories) {
         if (empty($selected_categories)) {
             return true;
         }
@@ -386,7 +388,7 @@ class UGSIW_To_Google_Sheets {
     /**
      * Send order data to Google Sheets with retry mechanism
      */
-    public function wpmethods_send_order_to_sheets($order_id, $old_status, $new_status, $order) {
+    public function ugsiw_send_order_to_sheets($order_id, $old_status, $new_status, $order) {
         
         $selected_statuses = get_option('ugsiw_gs_order_statuses', array('completed', 'processing'));
         
@@ -401,15 +403,78 @@ class UGSIW_To_Google_Sheets {
             return;
         }
         
-        $selected_categories = $this->wpmethods_get_selected_categories();
+        $selected_categories = $this->ugsiw_get_selected_categories();
         
-        if (!$this->wpmethods_order_has_selected_categories($order, $selected_categories)) {
+        if (!$this->ugsiw_order_has_selected_categories($order, $selected_categories)) {
             return;
         }
         
-        $order_data = $this->wpmethods_prepare_order_data($order);
+        $order_data = $this->ugsiw_prepare_order_data($order);
 
-        // If Pro forwarding is enabled, attempt to POST to the webhook even if Apps Script failed
+        // Offload sending to background worker to reduce order response time.
+        // Prefer Action Scheduler (used by WooCommerce). Fallbacks below.
+        $script_url = get_option('ugsiw_gs_script_url', '');
+
+        // If nothing to send, bail early
+        if (empty($script_url) && !($this->is_pro_active && get_option('ugsiw_gs_forward_webhook', '0') === '1')) {
+            return;
+        }
+
+        // Use Action Scheduler if available
+        if (function_exists('as_enqueue_async_action')) {
+            as_enqueue_async_action('ugsiw_send_order_to_sheets', array($order_data));
+            return;
+        }
+
+        if (function_exists('as_schedule_single_action')) {
+            as_schedule_single_action(time(), 'ugsiw_send_order_to_sheets', array($order_data), 'ugsiw');
+            return;
+        }
+
+        // Fallback: do non-blocking requests to minimize impact on order flow
+        if ($this->is_pro_active && get_option('ugsiw_gs_forward_webhook', '0') === '1') {
+            $webhook = get_option('ugsiw_gs_webhook_url', '');
+            if (!empty($webhook)) {
+                wp_remote_post($webhook, array(
+                    'method' => 'POST',
+                    'timeout' => 3,
+                    'redirection' => 2,
+                    'httpversion' => '1.1',
+                    'blocking' => false,
+                    'headers' => array('Content-Type' => 'application/json'),
+                    'body' => wp_json_encode($order_data),
+                    'data_format' => 'body'
+                ));
+            }
+        }
+
+        if (!empty($script_url)) {
+            wp_remote_post($script_url, array(
+                'method' => 'POST',
+                'timeout' => 3,
+                'redirection' => 2,
+                'httpversion' => '1.1',
+                'blocking' => false,
+                'headers' => array('Content-Type' => 'application/json'),
+                'body' => wp_json_encode($order_data),
+                'data_format' => 'body'
+            ));
+        }
+
+        return;
+        
+    }
+
+    /**
+     * Background processor for sending order data to Apps Script and optional webhook.
+     * This is intended to be run by Action Scheduler or WP Cron. It performs retries and logs errors.
+     */
+    public function ugsiw_process_send_order($order_data = array()) {
+        if (empty($order_data) || !is_array($order_data)) {
+            return;
+        }
+
+        // If Pro forwarding is enabled, attempt to POST to the webhook first
         if ($this->is_pro_active && get_option('ugsiw_gs_forward_webhook', '0') === '1') {
             $webhook = get_option('ugsiw_gs_webhook_url', '');
             if (!empty($webhook)) {
@@ -425,10 +490,7 @@ class UGSIW_To_Google_Sheets {
                 ));
 
                 if (is_wp_error($hook_response)) {
-                    // Log WP error
-                    if (defined('WP_DEBUG') && WP_DEBUG) {
-                        error_log('UGSIW Webhook Error: ' . $hook_response->get_error_message());
-                    }
+                    $this->ugsiw_debug_log('UGSIW Webhook Error: ' . $hook_response->get_error_message());
                 } else {
                     $hook_code = wp_remote_retrieve_response_code($hook_response);
                     if ($hook_code !== 200 && $hook_code !== 201) {
@@ -437,6 +499,7 @@ class UGSIW_To_Google_Sheets {
                         if (is_string($hook_clean) && strlen($hook_clean) > 200) {
                             $hook_clean = substr($hook_clean, 0, 200) . '...';
                         }
+                        $this->ugsiw_debug_log('UGSIW Webhook non-2xx response: ' . $hook_code . ' - ' . $hook_clean);
                     }
                 }
             }
@@ -444,69 +507,73 @@ class UGSIW_To_Google_Sheets {
 
         // Get Apps Script URL
         $script_url = get_option('ugsiw_gs_script_url', '');
-
         if (empty($script_url)) {
             return;
         }
-        
-        // Add retry mechanism for failed requests
-        $max_retries = 2;
-        $retry_delay = 1; // seconds
-        
+
+        // Retry mechanism - background worker can be more aggressive
+        $max_retries = 3;
+        $retry_delay = 2; // seconds base
+
         for ($attempt = 1; $attempt <= $max_retries; $attempt++) {
             $response = wp_remote_post($script_url, array(
                 'method' => 'POST',
-                'timeout' => 10,
+                'timeout' => 20,
                 'redirection' => 2,
                 'httpversion' => '1.1',
                 'blocking' => true,
-                'headers' => array(
-                    'Content-Type' => 'application/json',
-                ),
+                'headers' => array('Content-Type' => 'application/json'),
                 'body' => wp_json_encode($order_data),
                 'data_format' => 'body'
             ));
-            
-            // Check if request was successful
-            if (!is_wp_error($response)) {
-                $response_code = wp_remote_retrieve_response_code($response);
-                if ($response_code === 200) {
-                    // Success
-                    $body = wp_remote_retrieve_body($response);
-                    $data = json_decode($body, true);
-                    
-                    if (isset($data['status']) && $data['status'] === 'success') {
-                        return; // Exit on success
-                    }
-                } else {
-                    $body = wp_remote_retrieve_body($response);
-                    // Keep logs concise: strip HTML and truncate long responses
-                    $clean_body = wp_strip_all_tags($body);
-                    if (is_string($clean_body) && strlen($clean_body) > 200) {
-                        $clean_body = substr($clean_body, 0, 200) . '...';
-                    }
-                }
+
+            if (is_wp_error($response)) {
+                $this->ugsiw_debug_log('UGSIW Apps Script Error: ' . $response->get_error_message());
             } else {
-                // Log WP error
-                if (defined('WP_DEBUG') && WP_DEBUG) {
-                    error_log('UGSIW Apps Script Error: ' . $response->get_error_message());
+                $response_code = wp_remote_retrieve_response_code($response);
+                $body = wp_remote_retrieve_body($response);
+                if ($response_code === 200) {
+                    $data = json_decode($body, true);
+                    if (isset($data['status']) && $data['status'] === 'success') {
+                        return; // success
+                    }
                 }
+
+                // Log non-successful responses in debug
+                $clean_body = wp_strip_all_tags($body);
+                if (is_string($clean_body) && strlen($clean_body) > 200) {
+                    $clean_body = substr($clean_body, 0, 200) . '...';
+                }
+                $this->ugsiw_debug_log('UGSIW Apps Script non-success response: ' . $response_code . ' - ' . $clean_body);
             }
-            
-            // If not last attempt, wait and retry
+
+            // Exponential backoff before retrying
             if ($attempt < $max_retries) {
-                sleep($retry_delay * $attempt); // Exponential backoff
+                sleep($retry_delay * $attempt);
             }
         }
-        
-        
+    }
+
+    /**
+     * Helper logger — only writes to PHP error log when WP_DEBUG is true.
+     * Using a single wrapper reduces stray logs in production and keeps scanners happy.
+     */
+    private function ugsiw_debug_log($message) {
+        if (!defined('WP_DEBUG') || !WP_DEBUG) {
+            return;
+        }
+        if (is_scalar($message)) {
+            error_log($message);
+        } else {
+            error_log(print_r($message, true));
+        }
     }
     
     /**
      * Prepare order data for Google Sheets based on selected fields
      */
-    private function wpmethods_prepare_order_data($order) {
-        $selected_fields = $this->wpmethods_get_selected_fields();
+    private function ugsiw_prepare_order_data($order) {
+        $selected_fields = $this->ugsiw_get_selected_fields();
         $order_data = array();
         
         // If Pro is not active, ensure pro-only fields are not included in the payload
@@ -617,7 +684,7 @@ class UGSIW_To_Google_Sheets {
                 return $date_created ? $date_created->format('Y-m-d H:i:s') : '';
                 
             case 'product_categories':
-                return $this->wpmethods_get_order_categories($order);
+                return $this->ugsiw_get_order_categories($order);
 
             case 'coupon_used':
                 // Try WC_Order::get_used_coupons() first
@@ -747,7 +814,7 @@ class UGSIW_To_Google_Sheets {
     /**
      * Get categories from order products
      */
-    private function wpmethods_get_order_categories($order) {
+    private function ugsiw_get_order_categories($order) {
         $all_categories = array();
         
         foreach ($order->get_items() as $item) {
@@ -784,13 +851,13 @@ class UGSIW_To_Google_Sheets {
     /**
      * Add admin menu
      */
-    public function wpmethods_add_admin_menu() {
+    public function ugsiw_add_admin_menu() {
         add_menu_page(
             'WooCommerce to Google Sheets',
             'WC Orders to Google Sheets',
             'manage_options',
-            'wpmethods-wc-to-google-sheets',
-            array($this, 'wpmethods_settings_page'),
+            'ugsiw-wc-to-google-sheets',
+            array($this, 'ugsiw_settings_page'),
             'dashicons-google'
         );
     }
@@ -798,8 +865,8 @@ class UGSIW_To_Google_Sheets {
     /**
      * Admin scripts
      */
-    public function wpmethods_admin_scripts($hook) {
-        if ($hook != 'toplevel_page_wpmethods-wc-to-google-sheets') {
+    public function ugsiw_admin_scripts($hook) {
+        if ($hook != 'toplevel_page_ugsiw-wc-to-google-sheets') {
             return;
         }
 
@@ -808,50 +875,50 @@ class UGSIW_To_Google_Sheets {
         // Enqueue WordPress core styles
         wp_enqueue_style('wp-color-picker');
         wp_enqueue_script('wp-color-picker');
-        wp_enqueue_style('wpmethods-wc-gs-admin-style', plugin_dir_url(__FILE__) . '../assets/css/style' . $min . '.css', array(), UGSIW_VERSION);
-        wp_enqueue_script('wpmethods-wc-gs-admin-script', plugin_dir_url(__FILE__) . '../assets/js/admin' . $min . '.js', array('jquery'), UGSIW_VERSION, true);
+        wp_enqueue_style('ugsiw-wc-gs-admin-style', plugin_dir_url(__FILE__) . '../assets/css/style' . $min . '.css', array(), UGSIW_VERSION);
+        wp_enqueue_script('ugsiw-wc-gs-admin-script', plugin_dir_url(__FILE__) . '../assets/js/admin' . $min . '.js', array('jquery'), UGSIW_VERSION, true);
        
         // Localize script to pass PHP variables to JS
-        wp_localize_script('wpmethods-wc-gs-admin-script', 'ugsiw_gs', array(
+        wp_localize_script('ugsiw-wc-gs-admin-script', 'ugsiw_gs', array(
             'ajax_url' => admin_url('admin-ajax.php'),
-            'nonce' => wp_create_nonce('wpmethods_generate_script_nonce')
+            'nonce' => wp_create_nonce('ugsiw_generate_script_nonce')
         ));
     }
     
     /**
      * Initialize settings
      */
-    public function wpmethods_settings_init() {
+    public function ugsiw_settings_init() {
         // Main settings
-        register_setting('ugsiw_gs_settings', 'ugsiw_gs_order_statuses', array($this, 'wpmethods_sanitize_array'));
+        register_setting('ugsiw_gs_settings', 'ugsiw_gs_order_statuses', array($this, 'ugsiw_sanitize_array'));
         register_setting('ugsiw_gs_settings', 'ugsiw_gs_script_url', 'esc_url_raw');
-        register_setting('ugsiw_gs_settings', 'ugsiw_gs_product_categories', array($this, 'wpmethods_sanitize_array'));
-        register_setting('ugsiw_gs_settings', 'ugsiw_gs_selected_fields', array($this, 'wpmethods_sanitize_array'));
-        register_setting('ugsiw_gs_settings', 'ugsiw_gs_monthly_sheets', array($this, 'wpmethods_sanitize_checkbox'));
+        register_setting('ugsiw_gs_settings', 'ugsiw_gs_product_categories', array($this, 'ugsiw_sanitize_array'));
+        register_setting('ugsiw_gs_settings', 'ugsiw_gs_selected_fields', array($this, 'ugsiw_sanitize_array'));
+        register_setting('ugsiw_gs_settings', 'ugsiw_gs_monthly_sheets', array($this, 'ugsiw_sanitize_checkbox'));
         
         // Pro settings (only if active)
         if ($this->is_pro_active) {
-            register_setting('ugsiw_gs_settings', 'ugsiw_gs_sheet_mode', array($this, 'wpmethods_sanitize_text'));
-            register_setting('ugsiw_gs_settings', 'ugsiw_gs_daily_weekly', array($this, 'wpmethods_sanitize_text'));
-            register_setting('ugsiw_gs_settings', 'ugsiw_gs_product_sheets', array($this, 'wpmethods_sanitize_checkbox'));
-            register_setting('ugsiw_gs_settings', 'ugsiw_gs_custom_sheet_name', array($this, 'wpmethods_sanitize_text'));
-            register_setting('ugsiw_gs_settings', 'ugsiw_gs_custom_name_template', array($this, 'wpmethods_sanitize_text'));
-            register_setting('ugsiw_gs_settings', 'ugsiw_gs_forward_webhook', array($this, 'wpmethods_sanitize_checkbox'));
-            register_setting('ugsiw_gs_settings', 'ugsiw_gs_webhook_url', array($this, 'wpmethods_sanitize_text'));
+            register_setting('ugsiw_gs_settings', 'ugsiw_gs_sheet_mode', array($this, 'ugsiw_sanitize_text'));
+            register_setting('ugsiw_gs_settings', 'ugsiw_gs_daily_weekly', array($this, 'ugsiw_sanitize_text'));
+            register_setting('ugsiw_gs_settings', 'ugsiw_gs_product_sheets', array($this, 'ugsiw_sanitize_checkbox'));
+            register_setting('ugsiw_gs_settings', 'ugsiw_gs_custom_sheet_name', array($this, 'ugsiw_sanitize_text'));
+            register_setting('ugsiw_gs_settings', 'ugsiw_gs_custom_name_template', array($this, 'ugsiw_sanitize_text'));
+            register_setting('ugsiw_gs_settings', 'ugsiw_gs_forward_webhook', array($this, 'ugsiw_sanitize_checkbox'));
+            register_setting('ugsiw_gs_settings', 'ugsiw_gs_webhook_url', array($this, 'ugsiw_sanitize_text'));
         }
         
         // Main settings section
         add_settings_section(
             'ugsiw_gs_section',
             'Google Sheets Integration Settings',
-            array($this, 'wpmethods_section_callback'),
+            array($this, 'ugsiw_section_callback'),
             'ugsiw_gs_settings'
         );
         
         add_settings_field(
             'ugsiw_gs_order_statuses',
             'Trigger Order Statuses',
-            array($this, 'wpmethods_order_statuses_render'),
+            array($this, 'ugsiw_order_statuses_render'),
             'ugsiw_gs_settings',
             'ugsiw_gs_section'
         );
@@ -860,7 +927,7 @@ class UGSIW_To_Google_Sheets {
         add_settings_field(
             'ugsiw_gs_sheet_mode',
             'Sheet Mode',
-            array($this, 'wpmethods_sheet_mode_render'),
+            array($this, 'ugsiw_sheet_mode_render'),
             'ugsiw_gs_settings',
             'ugsiw_gs_section'
         );
@@ -868,7 +935,7 @@ class UGSIW_To_Google_Sheets {
         add_settings_field(
             'ugsiw_gs_product_categories',
             'Product Categories Filter',
-            array($this, 'wpmethods_product_categories_render'),
+            array($this, 'ugsiw_product_categories_render'),
             'ugsiw_gs_settings',
             'ugsiw_gs_section'
         );
@@ -876,7 +943,7 @@ class UGSIW_To_Google_Sheets {
         add_settings_field(
             'ugsiw_gs_selected_fields',
             'Checkout Fields',
-            array($this, 'wpmethods_selected_fields_render'),
+            array($this, 'ugsiw_selected_fields_render'),
             'ugsiw_gs_settings',
             'ugsiw_gs_section'
         );
@@ -884,7 +951,7 @@ class UGSIW_To_Google_Sheets {
         add_settings_field(
             'ugsiw_gs_script_url',
             'Google Apps Script URL',
-            array($this, 'wpmethods_script_url_render'),
+            array($this, 'ugsiw_script_url_render'),
             'ugsiw_gs_settings',
             'ugsiw_gs_section'
         );
@@ -893,7 +960,7 @@ class UGSIW_To_Google_Sheets {
         add_settings_field(
             'ugsiw_gs_forward_webhook',
             'Forward Orders to Webhook (Pro)',
-            array($this, 'wpmethods_forward_webhook_render'),
+            array($this, 'ugsiw_forward_webhook_render'),
             'ugsiw_gs_settings',
             'ugsiw_gs_section'
         );
@@ -903,14 +970,14 @@ class UGSIW_To_Google_Sheets {
     /**
      * Sanitize text input
      */
-    public function wpmethods_sanitize_text($input) {
+    public function ugsiw_sanitize_text($input) {
         return sanitize_text_field($input);
     }
     
     /**
      * Daily/Weekly Sheets field render - PRO FEATURE
      */
-    public function wpmethods_daily_weekly_render() {
+    public function ugsiw_daily_weekly_render() {
         if (!$this->is_pro_active) {
             echo '<div style="padding: 20px; background: linear-gradient(135deg, #fff3cd 0%, #ffeaa7 100%); border-radius: 6px; border-left: 4px solid #ffc107;">';
             echo '<p style="margin: 0; color: #856404; font-weight: 600;">';
@@ -959,7 +1026,7 @@ class UGSIW_To_Google_Sheets {
     /**
      * Product-wise Sheets field render - PRO FEATURE
      */
-    public function wpmethods_product_sheets_render() {
+    public function ugsiw_product_sheets_render() {
         if (!$this->is_pro_active) {
             echo '<div style="padding: 20px; background: linear-gradient(135deg, #fff3cd 0%, #ffeaa7 100%); border-radius: 6px; border-left: 4px solid #ffc107;">';
             echo '<p style="margin: 0; color: #856404; font-weight: 600;">';
@@ -989,7 +1056,7 @@ class UGSIW_To_Google_Sheets {
     /**
      * Custom Sheet Naming field render - PRO FEATURE
      */
-    public function wpmethods_custom_sheet_name_render() {
+    public function ugsiw_custom_sheet_name_render() {
         if (!$this->is_pro_active) {
             echo '<div style="padding: 20px; background: linear-gradient(135deg, #fff3cd 0%, #ffeaa7 100%); border-radius: 6px; border-left: 4px solid #ffc107;">';
             echo '<p style="margin: 0; color: #856404; font-weight: 600;">';
@@ -1052,7 +1119,7 @@ class UGSIW_To_Google_Sheets {
     /**
      * Sanitize array inputs
      */
-    public function wpmethods_sanitize_array($input) {
+    public function ugsiw_sanitize_array($input) {
         if (!is_array($input)) {
             return array();
         }
@@ -1062,21 +1129,21 @@ class UGSIW_To_Google_Sheets {
     /**
      * Sanitize checkbox input
      */
-    public function wpmethods_sanitize_checkbox($input) {
+    public function ugsiw_sanitize_checkbox($input) {
         return $input ? '1' : '0';
     }
     
     /**
      * Section callback
      */
-    public function wpmethods_section_callback() {
+    public function ugsiw_section_callback() {
         echo '<p>Configure the settings for Google Sheets integration.</p>';
     }
 
     /**
      * Unified Sheet Mode render (None / Monthly / Daily / Weekly / Product / Custom)
      */
-    public function wpmethods_sheet_mode_render() {
+    public function ugsiw_sheet_mode_render() {
         $value = get_option('ugsiw_gs_sheet_mode', 'none');
         $custom_enabled = ($value === 'custom');
         $template = get_option('ugsiw_gs_custom_name_template', 'Orders - {month} {year}');
@@ -1150,7 +1217,7 @@ class UGSIW_To_Google_Sheets {
     /**
      * Monthly sheets field render
      */
-    public function wpmethods_monthly_sheets_render() {
+    public function ugsiw_monthly_sheets_render() {
         $value = get_option('ugsiw_gs_monthly_sheets', '0');
         ?>
         <label style="display: inline-flex; align-items: center; gap: 10px; padding: 15px; background: #f8f9fa; border-radius: 6px; border: 1px solid #e0e0e0;">
@@ -1167,12 +1234,12 @@ class UGSIW_To_Google_Sheets {
     /**
      * Forward to webhook render (Pro)
      */
-    public function wpmethods_forward_webhook_render() {
+    public function ugsiw_forward_webhook_render() {
         if (!$this->is_pro_active) {
             echo '<div style="padding: 20px; background: linear-gradient(135deg, #fff3cd 0%, #ffeaa7 100%); border-radius: 6px; border-left: 4px solid #ffc107;">';
             echo '<p style="margin: 0; color: #856404; font-weight: 600;">';
             echo '<span class="dashicons dashicons-lock" style="color: #ffc107;"></span> ';
-            echo 'This is a Pro feature. <a href="' . (class_exists('UGSIW\Ugsiw_License_Settings') ? esc_attr(admin_url('admin.php?page=ugsiw-license')) : 'https://wpmethods.com/product/send-orders-to-google-sheets-for-woocommerce/') . '" style="color: #856404; text-decoration: underline;">Upgrade to Pro</a> to enable webhook forwarding.';
+            echo 'This is a Pro feature. <a href="' . (class_exists('UGSIW\Ugsiw_License_Settings') ? esc_attr(admin_url('admin.php?page=ugsiw-license')) : 'https://ugsiw.com/product/send-orders-to-google-sheets-for-woocommerce/') . '" style="color: #856404; text-decoration: underline;">Upgrade to Pro</a> to enable webhook forwarding.';
             echo '</p>';
             echo '</div>';
             return;
@@ -1195,7 +1262,7 @@ class UGSIW_To_Google_Sheets {
     /**
      * Order Statuses field render
      */
-    public function wpmethods_order_statuses_render() {
+    public function ugsiw_order_statuses_render() {
         $selected_statuses = get_option('ugsiw_gs_order_statuses', array('completed', 'processing'));
         
         if (!is_array($selected_statuses)) {
@@ -1205,7 +1272,7 @@ class UGSIW_To_Google_Sheets {
             }
         }
         
-        $all_statuses = $this->wpmethods_get_wc_order_statuses();
+        $all_statuses = $this->ugsiw_get_wc_order_statuses();
         
         echo '<div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; margin-bottom: 15px;">';
         
@@ -1229,7 +1296,7 @@ class UGSIW_To_Google_Sheets {
     /**
      * Get all WooCommerce product categories
      */
-    private function wpmethods_get_product_categories() {
+    private function ugsiw_get_product_categories() {
         $categories = get_terms(array(
             'taxonomy' => 'product_cat',
             'hide_empty' => false,
@@ -1251,9 +1318,9 @@ class UGSIW_To_Google_Sheets {
     /**
      * Product Categories field render
      */
-    public function wpmethods_product_categories_render() {
-        $selected_categories = $this->wpmethods_get_selected_categories();
-        $all_categories = $this->wpmethods_get_product_categories();
+    public function ugsiw_product_categories_render() {
+        $selected_categories = $this->ugsiw_get_selected_categories();
+        $all_categories = $this->ugsiw_get_product_categories();
         
         if (empty($all_categories)) {
             echo '<p>No product categories found.</p>';
@@ -1282,8 +1349,8 @@ class UGSIW_To_Google_Sheets {
     /**
      * Selected fields render
      */
-    public function wpmethods_selected_fields_render() {
-        $selected_fields = $this->wpmethods_get_selected_fields();
+    public function ugsiw_selected_fields_render() {
+        $selected_fields = $this->ugsiw_get_selected_fields();
         // Section header with PRO legend
         echo '<div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;">';
         echo '<h2 style="margin:0;">Checkout Fields</h2>';
@@ -1297,18 +1364,18 @@ class UGSIW_To_Google_Sheets {
         
         // Search box
         ?>
-        <div class="wpmethods-search-box">
-            <input type="text" id="wpmethods-field-search" placeholder="Search fields...">
+        <div class="ugsiw-search-box">
+            <input type="text" id="ugsiw-field-search" placeholder="Search fields...">
         </div>
         <?php
         
         // Display all fields in categories
-        echo '<div class="wpmethods-field-category">';
+        echo '<div class="ugsiw-field-category">';
         echo '<h3>';
         echo '<span><span class="dashicons dashicons-list-view"></span> All Fields</span>';
         echo '<span class="dashicons dashicons-arrow-down"></span>';
         echo '</h3>';
-        echo '<div class="wpmethods-fields-grid">';
+        echo '<div class="ugsiw-fields-grid">';
         
         foreach ($this->available_fields as $field_key => $field_info) {
             $checked = in_array($field_key, $selected_fields) ? 'checked' : '';
@@ -1328,7 +1395,7 @@ class UGSIW_To_Google_Sheets {
             }
             $icon = isset($field_info['icon']) ? $field_info['icon'] : 'dashicons dashicons-admin-generic';
             ?>
-            <div class="wpmethods-field-item">
+            <div class="ugsiw-field-item">
                 <label>
                     <input type="checkbox" name="ugsiw_gs_selected_fields[]" 
                            value="<?php echo esc_attr($field_key); ?>" 
@@ -1346,22 +1413,22 @@ class UGSIW_To_Google_Sheets {
         
         echo '<p class="description" style="margin-top: 20px;">Select fields to include in Google Sheets. Required fields are always included and cannot be disabled.</p>';
         ?>
-        <div class="wpmethods-feature-box">
+        <div class="ugsiw-feature-box">
             <h3 style="margin-top: 0; color: #667eea;">
                 <span class="dashicons dashicons-code-standards"></span> Generate Google Apps Script
             </h3>
             <p>Click the button below to generate a Google Apps Script code based on your selected fields. This script will handle data submission to your Google Sheets.</p>
-            <button type="button" id="wpmethods-generate-script" class="wpmethods-button">
+            <button type="button" id="ugsiw-generate-script" class="ugsiw-button">
                 <span class="dashicons dashicons-update"></span> Generate Google Apps Script
             </button>
-            <div id="wpmethods-script-output" style="margin-top: 15px; display: none;">
+            <div id="ugsiw-script-output" style="margin-top: 15px; display: none;">
                 <h4>Generated Script</h4>
-                <textarea id="wpmethods-generated-script" style="width: 100%; height: 400px;" readonly></textarea>
+                <textarea id="ugsiw-generated-script" style="width: 100%; height: 400px;" readonly></textarea>
                 <p style="margin-top: 10px;">
-                    <button type="button" id="wpmethods-copy-script" class="wpmethods-button wpmethods-button-secondary">
+                    <button type="button" id="ugsiw-copy-script" class="ugsiw-button ugsiw-button-secondary">
                         <span class="dashicons dashicons-clipboard"></span> Copy to Clipboard
                     </button>
-                    <span id="wpmethods-copy-status" style="margin-left: 10px; color: #28a745; font-weight: 600; display: none;">
+                    <span id="ugsiw-copy-status" style="margin-left: 10px; color: #28a745; font-weight: 600; display: none;">
                         <span class="dashicons dashicons-yes-alt"></span> Copied!
                     </span>
                 </p>
@@ -1373,7 +1440,7 @@ class UGSIW_To_Google_Sheets {
     /**
      * Script URL field render
      */
-    public function wpmethods_script_url_render() {
+    public function ugsiw_script_url_render() {
         $value = get_option('ugsiw_gs_script_url', '');
         ?>
         <div style="max-width: 600px;">
@@ -1392,15 +1459,15 @@ class UGSIW_To_Google_Sheets {
     /**
      * AJAX handler for generating Google Apps Script
      */
-    public function wpmethods_generate_google_script_ajax() {
-        check_ajax_referer('wpmethods_generate_script_nonce', 'nonce');
+    public function ugsiw_generate_google_script_ajax() {
+        check_ajax_referer('ugsiw_generate_script_nonce', 'nonce');
         
         if (!current_user_can('manage_options')) {
             wp_die('Unauthorized');
         }
         
         $allowed_fields  = array_keys($this->available_fields);
-        $selected_fields = $this->wpmethods_get_selected_fields();
+        $selected_fields = $this->ugsiw_get_selected_fields();
 
         if ( isset($_POST['fields']) && is_array($_POST['fields']) ) {
             $selected_fields = array_intersect(
@@ -1466,10 +1533,10 @@ class UGSIW_To_Google_Sheets {
     /**
      * Settings page with modern design
      */
-     public function wpmethods_settings_page() {
+     public function ugsiw_settings_page() {
         $selected_statuses = get_option('ugsiw_gs_order_statuses', array());
-        $selected_fields = $this->wpmethods_get_selected_fields();
-        $selected_categories = $this->wpmethods_get_selected_categories();
+        $selected_fields = $this->ugsiw_get_selected_fields();
+        $selected_categories = $this->ugsiw_get_selected_categories();
 
         // Sheet mode (single/monthly/daily/weekly/product/custom)
         $sheet_mode = get_option('ugsiw_gs_sheet_mode', 'none');
@@ -1479,10 +1546,10 @@ class UGSIW_To_Google_Sheets {
         $product_sheets = ($sheet_mode === 'product') ? '1' : '0';
         $custom_sheet_name = ($sheet_mode === 'custom') ? '1' : '0';
         ?>
-        <div class="wrap wpmethods-settings-wrapper">
+        <div class="wrap ugsiw-settings-wrapper">
             
             <!-- Modern Header with Pro badge -->
-            <div class="wpmethods-header">
+            <div class="ugsiw-header">
                 <h1>
                     <span class="dashicons dashicons-google" style="vertical-align: middle; margin-right: 10px;"></span>
                     Send WooCommerce Orders to Google Sheets
@@ -1494,19 +1561,19 @@ class UGSIW_To_Google_Sheets {
             </div>
             
             <!-- Dashboard Stats -->
-            <div class="wpmethods-dashboard">
-                <div class="wpmethods-card">
+            <div class="ugsiw-dashboard">
+                <div class="ugsiw-card">
                     <h3><span class="dashicons dashicons-admin-settings"></span> Configuration Status</h3>
-                    <div class="wpmethods-stats-grid">
-                        <div class="wpmethods-stat">
-                            <div class="wpmethods-stat-number"><?php echo count($selected_fields); ?></div>
-                            <div class="wpmethods-stat-label">Selected Fields</div>
+                    <div class="ugsiw-stats-grid">
+                        <div class="ugsiw-stat">
+                            <div class="ugsiw-stat-number"><?php echo count($selected_fields); ?></div>
+                            <div class="ugsiw-stat-label">Selected Fields</div>
                         </div>
-                        <div class="wpmethods-stat">
-                            <div class="wpmethods-stat-number"><?php echo count($selected_statuses); ?></div>
-                            <div class="wpmethods-stat-label">Trigger Statuses</div>
+                        <div class="ugsiw-stat">
+                            <div class="ugsiw-stat-number"><?php echo count($selected_statuses); ?></div>
+                            <div class="ugsiw-stat-label">Trigger Statuses</div>
                         </div>
-                        <div class="wpmethods-stat">
+                        <div class="ugsiw-stat">
                             <?php
                                 $mode_label = 'Single';
                                 $checked = '✓';
@@ -1527,15 +1594,15 @@ class UGSIW_To_Google_Sheets {
                                     $checked = '✓';
                                 }
                             ?>
-                            <div class="wpmethods-stat-number"><?php echo esc_html($checked); ?></div>
-                            <div class="wpmethods-stat-label"><?php echo esc_html($mode_label); ?></div>
+                            <div class="ugsiw-stat-number"><?php echo esc_html($checked); ?></div>
+                            <div class="ugsiw-stat-label">Sheet Mode: <?php echo esc_html($mode_label); ?></div>
                         </div>
 
-                        <div class="wpmethods-stat">
-                            <div class="wpmethods-stat-number">
+                        <div class="ugsiw-stat">
+                            <div class="ugsiw-stat-number">
                                 <?php echo $this->is_pro_active ? 'Active' : 'Free'; ?>
                             </div>
-                            <div class="wpmethods-stat-label">License Status</div>
+                            <div class="ugsiw-stat-label">License Status</div>
                         </div>
                         
                     </div>
@@ -1543,7 +1610,7 @@ class UGSIW_To_Google_Sheets {
                 
                 <!-- Pro Features Card -->
                 <?php if (!$this->is_pro_active): ?>
-                <div class="wpmethods-card" style="border: 2px solid #ffc107;">
+                <div class="ugsiw-card" style="border: 2px solid #ffc107;">
                     <h3 style="color: #ffc107;">
                         <span class="dashicons dashicons-star-filled"></span> Unlock Pro Features
                     </h3>
@@ -1555,11 +1622,11 @@ class UGSIW_To_Google_Sheets {
                         <li style="margin-bottom: 8px;">✅ Priority Support - Fast help</li>
                     </ul>
                     <?php if (class_exists('UGSIW\Ugsiw_License_Settings')): ?>
-                    <a href="<?php echo esc_attr(admin_url('admin.php?page=ugsiw-license')); ?>" class="wpmethods-button" style="margin-top: 15px; background: linear-gradient(135deg, #ffc107 0%, #ff9800 100%);">
+                    <a href="<?php echo esc_attr(admin_url('admin.php?page=ugsiw-license')); ?>" class="ugsiw-button" style="margin-top: 15px; background: linear-gradient(135deg, #ffc107 0%, #ff9800 100%);">
                         <span class="dashicons dashicons-unlock"></span> Active License
                     </a>
                     <?php else: ?>
-                    <a href="https://wpmethods.com/product/send-orders-to-google-sheets-for-woocommerce/" class="wpmethods-button" style="margin-top: 15px; background: linear-gradient(135deg, #ffc107 0%, #ff9800 100%);">
+                    <a href="https://ugsiw.com/product/send-orders-to-google-sheets-for-woocommerce/" class="ugsiw-button" style="margin-top: 15px; background: linear-gradient(135deg, #ffc107 0%, #ff9800 100%);">
                         <span class="dashicons dashicons-unlock"></span> Upgrade to Pro
                     </a>
                     <?php endif; ?>
@@ -1572,19 +1639,19 @@ class UGSIW_To_Google_Sheets {
                 <?php
                 settings_fields('ugsiw_gs_settings');
                 do_settings_sections('ugsiw_gs_settings');
-                submit_button('Save Settings', 'primary wpmethods-button', 'submit', false);
+                submit_button('Save Settings', 'primary ugsiw-button', 'submit', false);
                 ?>
             </form>
             
             
             
             <!-- Configuration Summary -->
-            <div class="wpmethods-card">
+            <div class="ugsiw-card">
                 <h3><span class="dashicons dashicons-chart-bar"></span> Configuration Summary</h3>
                 
-                <div class="wpmethods-stats-grid">
-                    <div class="wpmethods-stat">
-                        <div class="wpmethods-stat-number">
+                <div class="ugsiw-stats-grid">
+                    <div class="ugsiw-stat">
+                        <div class="ugsiw-stat-number">
                             <?php 
                             if (!is_array($selected_statuses)) {
                                 $selected_statuses = maybe_unserialize($selected_statuses);
@@ -1595,17 +1662,17 @@ class UGSIW_To_Google_Sheets {
                             echo count($selected_statuses);
                             ?>
                         </div>
-                        <div class="wpmethods-stat-label">Trigger Statuses</div>
+                        <div class="ugsiw-stat-label">Trigger Statuses</div>
                     </div>
                     
-                    <div class="wpmethods-stat">
-                        <div class="wpmethods-stat-number"><?php echo $monthly_sheets === '1' ? 'Enabled' : 'Single'; ?></div>
-                        <div class="wpmethods-stat-label">Sheet Mode</div>
+                    <div class="ugsiw-stat">
+                        <div class="ugsiw-stat-number"><?php echo $monthly_sheets === '1' ? 'Enabled' : 'Single'; ?></div>
+                        <div class="ugsiw-stat-label">Sheet Mode</div>
                     </div>
                     
-                    <div class="wpmethods-stat">
-                        <div class="wpmethods-stat-number"><?php echo count($selected_fields); ?></div>
-                        <div class="wpmethods-stat-label">Selected Fields</div>
+                    <div class="ugsiw-stat">
+                        <div class="ugsiw-stat-number"><?php echo count($selected_fields); ?></div>
+                        <div class="ugsiw-stat-label">Selected Fields</div>
                     </div>
                 </div>
                 
@@ -1645,10 +1712,10 @@ class UGSIW_To_Google_Sheets {
 
 
             <!-- Video Tutorial -->
-            <div class="wpmethods-video-box">
+            <div class="ugsiw-video-box">
                 <h3><span class="dashicons dashicons-video-alt3"></span> Watch Setup Tutorial</h3>
                 <p style="color: rgba(255,255,255,0.9); margin-bottom: 20px;">Learn how to set up the plugin step by step with our video tutorial.</p>
-                <a href="https://youtu.be/7Kh-uugbods" target="_blank" class="wpmethods-video-button">
+                <a href="https://youtu.be/7Kh-uugbods" target="_blank" class="ugsiw-video-button">
                     <span class="dashicons dashicons-youtube"></span> Watch Tutorial Video
                 </a>
             </div>
@@ -1656,64 +1723,64 @@ class UGSIW_To_Google_Sheets {
 
             <!-- More Products Section -->
             <?php if (!defined('UGSIW_PRO_VERSION')): ?>
-            <div class="wpmethods-products-box">
+            <div class="ugsiw-products-box">
                 <h3><span class="dashicons dashicons-products"></span> More Products by WP Methods</h3>
                 <p style="margin-bottom: 20px;">Check out our other products that might interest you.</p>
                 
-                <div class="wpmethods-products-grid">
+                <div class="ugsiw-products-grid">
                     <!-- Product 1 -->
-                    <div class="wpmethods-product-card">
-                        <img src="<?php echo esc_url(UGSIW_WPMETHODS_URL); ?>assets/img/Click-Shop-wordpress-theme.webp" alt="Click Shop - Ecommerce Wordpress Theme">
+                    <div class="ugsiw-product-card">
+                        <img src="<?php echo esc_url(UGSIW_ugsiw_URL); ?>assets/img/Click-Shop-wordpress-theme.webp" alt="Click Shop - Ecommerce Wordpress Theme">
                         <h4>Click Shop - Ecommerce Wordpress Theme</h4>
-                        <a href="https://wpmethods.com/product/click-shop-wordpress-landing-page-type-ecommerce-theme/" target="_blank" class="wpmethods-product-button">Get it</a>
+                        <a href="https://ugsiw.com/product/click-shop-wordpress-landing-page-type-ecommerce-theme/" target="_blank" class="ugsiw-product-button">Get it</a>
                     </div>
                     
                     <!-- Product 2 -->
-                    <div class="wpmethods-product-card">
-                        <img src="<?php echo esc_url(UGSIW_WPMETHODS_URL); ?>assets/img/bdexchanger-dollar-buy-sell-php-script-or-money-exchanger-ex.webp" alt="BDExchanger || PHP Script for Dollar Buy Sell">
+                    <div class="ugsiw-product-card">
+                        <img src="<?php echo esc_url(UGSIW_ugsiw_URL); ?>assets/img/bdexchanger-dollar-buy-sell-php-script-or-money-exchanger-ex.webp" alt="BDExchanger || PHP Script for Dollar Buy Sell">
                         <h4>BDExchanger || PHP Script for Dollar Buy Sell</h4>
-                        <a href="https://wpmethods.com/product/bdexchanger-php-script-for-dollar-buy-sell-or-currency-exchanger/" target="_blank" class="wpmethods-product-button">Get it</a>
+                        <a href="https://ugsiw.com/product/bdexchanger-php-script-for-dollar-buy-sell-or-currency-exchanger/" target="_blank" class="ugsiw-product-button">Get it</a>
                     </div>
                     
                     <!-- Product 3 -->
-                    <div class="wpmethods-product-card">
-                        <img src="<?php echo esc_url(UGSIW_WPMETHODS_URL); ?>assets/img/Social-Chat-Floating-Icons-WordPress-Plugin.webp" alt="Social Chat Floating Icons Wordpress Plugin">
+                    <div class="ugsiw-product-card">
+                        <img src="<?php echo esc_url(UGSIW_ugsiw_URL); ?>assets/img/Social-Chat-Floating-Icons-WordPress-Plugin.webp" alt="Social Chat Floating Icons Wordpress Plugin">
                         <h4>Social Chat Floating Icons Wordpress Plugin</h4>
-                        <a href="https://wpmethods.com/product/social-chat-floating-icons-wordpress-plugin/" target="_blank" class="wpmethods-product-button">Get it</a>
+                        <a href="https://ugsiw.com/product/social-chat-floating-icons-wordpress-plugin/" target="_blank" class="ugsiw-product-button">Get it</a>
                     </div>
                     
                     <!-- Product 4 -->
-                    <div class="wpmethods-product-card">
-                        <img src="<?php echo esc_url(UGSIW_WPMETHODS_URL); ?>assets/img/How-to-Show-Recent-WooCommerce-Order-List-Table-with-Elementor-Addon-Orders-Frontend.webp" alt="WooCommerce Order List Table on eCommerce Website">
+                    <div class="ugsiw-product-card">
+                        <img src="<?php echo esc_url(UGSIW_ugsiw_URL); ?>assets/img/How-to-Show-Recent-WooCommerce-Order-List-Table-with-Elementor-Addon-Orders-Frontend.webp" alt="WooCommerce Order List Table on eCommerce Website">
                         <h4>WooCommerce Order List Table on eCommerce Website</h4>
-                        <a href="https://wpmethods.com/product/woocommerce-order-list-table-on-ecommerce-website-elementor-addon/" target="_blank" class="wpmethods-product-button">Get it</a>
+                        <a href="https://ugsiw.com/product/woocommerce-order-list-table-on-ecommerce-website-elementor-addon/" target="_blank" class="ugsiw-product-button">Get it</a>
                     </div>
                     
                     <!-- Product 5 -->
-                    <div class="wpmethods-product-card">
-                        <img src="<?php echo esc_url(UGSIW_WPMETHODS_URL); ?>assets/img/Book-Shop-Multi-Seller-banner.webp" alt="Multi-Vendor Book Selling Website Backup File">
+                    <div class="ugsiw-product-card">
+                        <img src="<?php echo esc_url(UGSIW_ugsiw_URL); ?>assets/img/Book-Shop-Multi-Seller-banner.webp" alt="Multi-Vendor Book Selling Website Backup File">
                         <h4>Multi-Vendor Book Selling Website Backup File</h4>
-                        <a href="https://wpmethods.com/product/multi-vendor-book-selling-website-to-sell-pdf-hardcover-books/" target="_blank" class="wpmethods-product-button">Get it</a>
+                        <a href="https://ugsiw.com/product/multi-vendor-book-selling-website-to-sell-pdf-hardcover-books/" target="_blank" class="ugsiw-product-button">Get it</a>
                     </div>
 
                     <!-- Product 6 -->
-                    <div class="wpmethods-product-card">
-                        <img src="<?php echo esc_url(UGSIW_WPMETHODS_URL); ?>assets/img/single-product-landing-page-with-woocommerce-checkout-form-copy.webp" alt="Multi-Vendor Book Selling Website Backup File">
+                    <div class="ugsiw-product-card">
+                        <img src="<?php echo esc_url(UGSIW_ugsiw_URL); ?>assets/img/single-product-landing-page-with-woocommerce-checkout-form-copy.webp" alt="Multi-Vendor Book Selling Website Backup File">
                         <h4>Single Product Landing Page with WooCommerce</h4>
-                        <a href="https://wpmethods.com/product/single-product-landing-page-with-woocommerce-checkout-order-form/" target="_blank" class="wpmethods-product-button">Get it</a>
+                        <a href="https://ugsiw.com/product/single-product-landing-page-with-woocommerce-checkout-order-form/" target="_blank" class="ugsiw-product-button">Get it</a>
                     </div>
                 </div>
                 
                 <div style="text-align: center; margin-top: 30px;">
-                    <a href="https://wpmethods.com/" target="_blank" class="wpmethods-button">View More Products</a>
+                    <a href="https://ugsiw.com/" target="_blank" class="ugsiw-button">View More Products</a>
                 </div>
             </div>
             
             <!-- Donation Section -->
-            <div class="wpmethods-donation-box">
+            <div class="ugsiw-donation-box">
                 <h3><span class="dashicons dashicons-heart"></span> Support This Plugin</h3>
                 <p style="color: #856404; margin-bottom: 20px;">If this plugin has helped your business, consider buying me a coffee to support further development.</p>
-                <a href="https://buymeacoffee.com/ajharrashed" target="_blank" class="wpmethods-donation-button">
+                <a href="https://buymeacoffee.com/ajharrashed" target="_blank" class="ugsiw-donation-button">
                     <span class="dashicons dashicons-coffee"></span> Buy Me a Coffee
                 </a>
             </div>
